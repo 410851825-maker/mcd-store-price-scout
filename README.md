@@ -303,8 +303,12 @@ mcd-store-price-scout/
 │   ├── selftest.py                 # 46 项自测
 │   └── sample_data/
 │       └── sample_data.json        # 脱敏样例数据
+├── docs/
+│   └── example-output.txt          # 真实运行输出样例（已脱敏）
 └── .github/workflows/ci.yml        # CI：跑自测
 ```
+
+> 完整输出样例见 [`docs/example-output.txt`](docs/example-output.txt)（真实运行，已脱敏）。
 
 ---
 
