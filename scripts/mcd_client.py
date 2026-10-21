@@ -117,6 +117,11 @@ class McdClient:
         """调用一个 MCP 工具，返回 structuredContent.data。
 
         失败时抛 McdError，调用方需自行决定是否降级。
+
+        ★ 重要：麦当劳 MCP Server 在业务失败时**仍返回 HTTP 200**，
+        真正的错误信息在 body 的 structuredContent 里：
+            success=false, code=600048, message="外送场景下，beType=2/5/6时必传beCode"
+        因此**不能只看 HTTP 状态码**，必须解析 structuredContent.success。
         """
         self.call_count += 1
         self.tool_counts[tool] = self.tool_counts.get(tool, 0) + 1
@@ -137,7 +142,7 @@ class McdClient:
             except json.JSONDecodeError:
                 return text
 
-        # 官方约定：success=False 时 message 里带原因
+        # 官方约定：HTTP 仍是 200，但 success=False 且 code/message 给出真实原因
         if sc.get("success") is False:
             raise McdError(f"工具 {tool} 失败[{sc.get('code')}]：{sc.get('message')}")
         return sc.get("data")
