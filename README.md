@@ -343,7 +343,8 @@ python scripts/price_scout.py --city 佛山 --keyword 禅城区 --verbose-stats
 | **套餐陷阱** | 券在套餐内 `discount=0`，但套餐明明含该商品 | 对每个候选套餐实测算价比对 discount，不靠字段推断 |
 | **静默零值** | `calculate-price` 的商品字段名是 `productCode`（传 `code` 静默返回全 0） | 统一封装在 `mcd_client.calculate_price()`，并有自测覆盖 |
 
-> 全部细节见 [`references/mcp-tools.md`](references/mcp-tools.md)。
+> 全部细节见 [`references/mcp-tools.md`](references/mcp-tools.md)；
+> 调用协议与真实报文见 [`references/mcp-protocol.md`](references/mcp-protocol.md)。
 
 ### 目录结构
 
@@ -358,6 +359,7 @@ mcd-store-price-scout/
 ├── LICENSE
 ├── references/
 │   ├── mcp-tools.md                # 工具清单 + 字段映射 + 已知坑
+│   ├── mcp-protocol.md             # MCP 调用协议详解（真实抓包）
 │   └── store-pricing.md            # 门店定价机制与判读方法
 ├── scripts/
 │   ├── mcd_client.py               # 零依赖 MCP 客户端（鉴权/限流/降级/缓存）
