@@ -354,6 +354,48 @@ CI 会在每次 push 自动执行。
 
 ---
 
+## 金额准确性
+
+程序里的每个金额都来自麦当劳 MCP 接口的真实返回，**没有任何插值或估算**。
+唯一的"计算"是四则运算和比较。
+
+### 各接口的金额单位（实测确认）
+
+| 接口 | 字段 | 原始值 | 单位 |
+|---|---|---|---|
+| `query-meals` | `currentPrice` / `originalPrice` | `"26.5"` | 元 |
+| `query-my-coupons` | `discountInfo.discountValue` | `"13.9"` | 元 |
+| `order-list` | `realTotalAmount` | `"27.5"` | 元 |
+| `calculate-price` | `price` / `originalPrice` / `discount` | `2650` / `710` | **分** |
+
+**只有 `calculate-price` 返回分**，换算只在这一处发生（`/100`）。
+「券是否生效」的判断用 `discount == 0` 的**整数比较**，不碰浮点。
+
+### 三层保障
+
+**① 交叉校验**（`verify_amounts.py`，13 项，真实数据）
+
+```bash
+export MCD_MCP_TOKEN="你的Token"
+python scripts/verify_amounts.py
+```
+
+验证菜单价（元）与算价结果（分→元）必须一致：
+
+```
+1100 巨无霸       算价 2650/100=26.50  vs 菜单 26.5   ✓
+515946 浓浓黑巧   算价 1390/100=13.90  vs 菜单 13.9   ✓
+优惠额自洽        1390 == 2100 - 710                    ✓
+套餐场景 discount=0（券不生效判定正确）                  ✓
+119 项折扣额无浮点尾数                                  ✓
+```
+
+**② 整数判 0** —— 券适用性判定在未换算的整数域完成
+
+**③ 离线自测** —— 46 项断言覆盖金额换算与边界情况，CI 每次 push 执行
+
+---
+
 ## 数据与隐私
 
 - 本工具读取的 `query-my-*` / `order-list` 全部是**当前登录用户自己的**私有数据

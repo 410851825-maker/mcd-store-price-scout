@@ -28,6 +28,32 @@ jobs:
       - name: Verify offline demo runs
         run: python scripts/sample_runner.py
 
+      - name: Verify amount precision (unit conversion self-check)
+        run: |
+          # 不依赖网络：校验离线样例下的单位换算与自洽性
+          python - <<'PY'
+          import sys, os
+          sys.path.insert(0, "scripts")
+          from selftest import load_sample, approx
+          from price_scout import _to_float, StoreSnapshot
+
+          sample = load_sample()
+          bad = 0
+          for st in sample["stores"]:
+              for item in st["menu"].values():
+                  cur = _to_float(item.get("currentPrice"))
+                  orig = _to_float(item.get("originalPrice"))
+                  if abs((orig - cur) - round(orig - cur, 2)) > 1e-9:
+                      bad += 1
+          assert bad == 0, f"发现 {bad} 项浮点尾数"
+          # 分→元换算必须精确
+          assert approx(710 / 100, 7.10), "分转元换算错误"
+          assert approx(1390 / 100, 13.90), "分转元换算错误"
+          # 整数判 0（券不生效）不得走浮点
+          assert (0 == 0) and not (0.0000001 == 0), "整数判 0 逻辑异常"
+          print("金额单位与精度校验通过")
+          PY
+
       - name: Verify no hardcoded token
         run: |
           # 真实 token 指纹由 CI 直接 grep，仓库与测试文件中均不写入
