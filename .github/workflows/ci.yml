@@ -61,17 +61,49 @@ jobs:
 
       - name: Verify no hardcoded token
         run: |
-          # 真实 token 指纹由 CI 直接 grep，仓库与测试文件中均不写入
-          if grep -rInE "UQcdIytlzwchUscck6of6En84LPy2ux1|XJJD20261000017" \
-                  --include="*.py" --include="*.json" --include="*.md" .; then
-            echo "::error::发现明文 MCP Token"
-            exit 1
-          fi
+          # ★ 用形态检测，不在仓库里写入任何真实 token 字符串
+          # 规则：混合大小写 + 含数字 + 长度 >= 24 的连续串（排除哈希与全大写标识符）
+          python - <<'PY'
+          import os, re, sys
+
+          ALLOW = {"YOUR_MCP_TOKEN", "MCD_MCP_TOKEN", "MCP_TOKEN",
+                   "AUTHORIZATION", "BEARER", "STREAMABLEHTTP", "HTTPS_MCD_CN"}
+          BENIGN = [re.compile(r"^[A-F0-9]{64}$"), re.compile(r"^[A-Z0-9_]+$")]
+
+          hits = []
+          for root, dirs, files in os.walk("."):
+              dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
+              for fn in files:
+                  if not fn.endswith((".py", ".json", ".md", ".txt", ".yml", ".yaml")):
+                      continue
+                  path = os.path.join(root, fn)
+                  try:
+                      content = open(path, encoding="utf-8", errors="ignore").read()
+                  except OSError:
+                      continue
+                  for lineno, line in enumerate(content.splitlines(), 1):
+                      for cand in re.findall(r"[A-Za-z0-9]{16,}", line):
+                          if cand in ALLOW:
+                              continue
+                          if any(p.match(cand) for p in BENIGN):
+                              continue
+                          if (len(cand) >= 24 and any(c.isdigit() for c in cand)
+                                  and any(c.islower() for c in cand)
+                                  and any(c.isupper() for c in cand)):
+                              hits.append(f"{path}:{lineno}")
+
+          if hits:
+              print("::error::发现疑似明文 Token")
+              for h in hits[:10]:
+                  print(f"  {h}")
+              sys.exit(1)
+          print("未发现明文 Token")
+          PY
           if grep -rInE "Bearer [A-Za-z0-9]{20,}" --include="*.py" --include="*.json" --include="*.md" .; then
             echo "::error::发现 Bearer 头携带疑似真实 Token"
             exit 1
           fi
-          echo "未发现明文 Token"
+          echo "Bearer 头检查通过"
 
       - name: Verify MCP config uses env placeholder
         run: |

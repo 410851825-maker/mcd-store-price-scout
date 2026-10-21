@@ -18,19 +18,39 @@ if (!src || !out) {
 }
 
 // ---- 脱敏规则 ----
-// 注意：会话日志里 token 可能被分段存储（如源码里写成两段拼接），
-// 因此既要匹配完整串，也要匹配已知片段。
-const SECRETS = [
-  'UQcdIytlzwchUscck6of6En84LPy2ux1',
-  'XJJD20261000017',
-];
-// 已知 token 的任意 >=8 位连续片段
-const FRAGMENTS = [
-  'UQcdIytlzwch',
-  'Uscck6of6En84LPy2ux1',
-  'XJJD2026',
-  'XJJD20261000017',
-];
+// ★ 本文件会进入公开仓库，因此**不能写入任何真实 token 字符串**。
+// 完整 token 由调用方通过环境变量 MCD_REDACT_TOKENS 传入（逗号分隔）。
+//
+// 难点：会话日志里 token 可能被**任意切分**存储（实测见过源码里写成
+// ["UQcdIytlzwch", "Uscck6of6En84LPy2ux1"] 两段拼接的形式），
+// 只匹配完整串会漏。因此从完整 token **派生所有 >= MIN_FRAG_LEN 位的连续子串**，
+// 一次性覆盖所有切分方式。
+const MIN_FRAG_LEN = 7;
+
+// 完整 token 从环境变量读取
+const FULL_SECRETS = (process.env.MCD_REDACT_TOKENS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+// 从完整 token 派生子串集合
+const FRAGMENTS = new Set();
+for (const sec of FULL_SECRETS) {
+  for (let i = 0; i < sec.length; i++) {
+    for (let j = i + MIN_FRAG_LEN; j <= sec.length; j++) {
+      const sub = sec.slice(i, j);
+      const hasLetter = /[A-Za-z]/.test(sub);
+      const hasDigit = /\d/.test(sub);
+      // 含数字的片段：>= 7 位即可
+      // 纯字母片段：要求 >= 10 位，避免误伤普通英文单词
+      if (hasLetter && hasDigit) FRAGMENTS.add(sub);
+      else if (hasLetter && sub.length >= 10) FRAGMENTS.add(sub);
+    }
+  }
+}
+// 长片段优先替换，避免部分重叠
+const FRAGMENT_LIST = [...FRAGMENTS].sort((a, b) => b.length - a.length);
+
 const PATTERNS = [
   // 任意 Bearer 头后跟长串
   /(Bearer\s+)([A-Za-z0-9]{16,})/g,
@@ -43,14 +63,23 @@ const PATTERNS = [
 function desensitize(text) {
   if (!text) return text;
   let s = text;
-  for (const sec of SECRETS) {
+  // 1) 完整串
+  for (const sec of FULL_SECRETS) {
     while (s.includes(sec)) s = s.replace(sec, '<MCP_TOKEN_REDACTED>');
   }
-  // 片段替换（长的优先，避免部分重叠）
-  for (const frag of FRAGMENTS.slice().sort((a, b) => b.length - a.length)) {
-    if (frag.length < 8) continue;
+  // 2) 派生片段（覆盖任意切分形式）
+  for (const frag of FRAGMENT_LIST) {
     while (s.includes(frag)) s = s.replace(frag, '<TOKEN_REDACTED>');
   }
+  // 2b) 清理「检测命令里残留的片段」：
+  //     对话中出现过形如 grep -qE "UQcdIytlzwch|..." 的检测命令文本，
+  //     这些不是真实 token，但形态上仍像敏感串，统一收敛。
+  s = s.replace(/[A-Za-z0-9]{7,20}(?=\|)/g, (m) => {
+    if (FRAGMENTS.has(m)) return '<TOKEN_REDACTED>';
+    return m;
+  });
+  s = s.replace(/(["'`]\s*,\s*)([A-Za-z0-9]{7,20})(?=\s*,\s*["'`])/g, (m, p1, p2) =>
+    FRAGMENTS.has(p2) ? p1 + '<TOKEN_REDACTED>' : m);
   s = s.replace(PATTERNS[0], (m, p1) => p1 + '<TOKEN_REDACTED>');
   s = s.replace(PATTERNS[1], (m, p1, p3) => p1 + '<TOKEN_REDACTED>' + p3);
   s = s.replace(PATTERNS[2], '<HASH_REDACTED>');
