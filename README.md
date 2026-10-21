@@ -1,17 +1,32 @@
 # 麦门门店价差官 · mcd-store-price-scout
 
-> **你的优惠券，可能在你常去的店根本用不了。**
->
-> 基于 **麦当劳中国 MCP（McDonald's China MCP）** 开发的门店定价洞察 Skill：
-> 把「现在点这一单，到底该怎么做」的判断，从感觉变成可复核的结论。
->
-> 又名：麦门店店比价官 / 麦门定价侦探 / MCD Store Price Scout。
+## 广州塔 95 个在售商品，只有 1 个在打折。
+
+同一份「龙焰芝士棒鸡腿堡三件套」，社区店 **¥29.9**，广州南站快捷小站 **¥57.0**——
+不是两份不同的餐，是**同一款**。而你手里那张券，大概率在你最常去的那家店**根本兑不了**。
+
+![同款三件套社区店 ¥29.9 vs 广州南站 ¥57.0；广州塔 95 个在售商品只有 1 个在打折](assets/hero.png)
+
+它用 **麦当劳中国 MCP（McDonald's China MCP）** 实时拉取门店菜单、活动折扣与可兑券，
+叠加你自己的历史消费画像，只回答一个问题：**现在这一单，怎么点最划算、券在哪家店才真能用。**
+
+| 实测结论 | 数字 | 数据来源 |
+|---|---|---|
+| 同款套餐跨门店极差 | ¥29.9 → ¥57.0，**贵 90.6%**（¥27.1） | 18 家门店逐店 `query-meals` 比对 |
+| 广州塔在售商品打几个折 | **1 / 95 = 1.1%** | 同一时刻快照 |
+| 广州南站在售商品打几个折 | **0 / 83 = 0%** | 同一时刻快照 |
+| 一张 13.9 券的可兑门店 | 广州 35 家中 **29 家可用、6 家不可用**；广州塔 12 家**一张都兑不了** | `query-store-coupons` 逐店探测 |
+
+> 全部数字来自麦当劳 MCP 的真实返回，**没有一处是模型估算**；
+> 命令行 `python scripts/price_scout.py --city 广州 --keyword 广州塔` 可复现。
+
+`又名：麦门店店比价官 / 麦门定价侦探 / MCD Store Price Scout。`
 
 麦当劳程序员创意开发大赛参赛作品 · **非麦当劳官方产品**。
 
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
 [![零依赖](https://img.shields.io/badge/dependencies-0-brightgreen)](https://pypi.org/)
-[![自测](https://img.shields.io/badge/selftest-46%20passed-success)](scripts/selftest.py)
+[![自测](https://img.shields.io/badge/selftest-48%20passed-success)](scripts/selftest.py)
 
 ---
 
@@ -23,7 +38,7 @@
 | 主办方 | 金拱门（中国）有限公司 |
 | 官方活动仓库 | [`M-China/mcd-developer-innovation-challenge`](https://github.com/M-China/mcd-developer-innovation-challenge) |
 | 活动规则 | [`activityGuidelines.md`](https://github.com/M-China/mcd-developer-innovation-challenge/blob/main/activityGuidelines.md) |
-| 参赛项目名称 | 麦门店店价差官 mcd-store-price-scout |
+| 参赛项目名称 | 麦门门店价差官 mcd-store-price-scout |
 | 使用能力 | 麦当劳中国 MCP Server（`https://mcp.mcd.cn`），9 个只读工具 |
 | 开发方式 | 腾讯 WorkBuddy 智能体（已提交 `workbuddy.md` 记录完整开发对话） |
 | 数据范围 | 仅使用当前登录用户自己的账号数据，全程只读 |
@@ -369,6 +384,8 @@ mcd-store-price-scout/
 ├── mcp-config.example.json         # 脱敏 MCP 配置
 ├── workbuddy.md                    # WorkBuddy 开发对话上下文
 ├── LICENSE
+├── assets/
+│   └── hero.png                    # 首屏对比图（实测数据可视化）
 ├── references/
 │   ├── mcp-tools.md                # 工具清单 + 字段映射 + 已知坑
 │   ├── mcp-protocol.md             # MCP 调用协议详解（真实抓包）
@@ -377,9 +394,9 @@ mcd-store-price-scout/
 │   ├── mcd_client.py               # 零依赖 MCP 客户端（鉴权/限流/降级/缓存）
 │   ├── price_scout.py              # 四维决策核心引擎
 │   ├── sample_runner.py            # 离线演示
-│   ├── selftest.py                 # 46 项离线自测
+│   ├── selftest.py                 # 48 项离线自测
 │   ├── verify_amounts.py           # 金额精度交叉校验（13 项，需 Token）
-│   ├── verify_requirements.py      # 参赛要求逐条核验（37 项）
+│   ├── verify_requirements.py      # 参赛要求逐条核验（46 项）
 │   ├── trace_run.py                # 运行过程追踪（打印每步 MCP 调用）
 │   └── sample_data/
 │       └── sample_data.json        # 脱敏样例数据
@@ -402,7 +419,7 @@ python scripts/selftest.py
 
 ```
 ================================================================
- 结果：46 passed, 0 failed
+ 结果：48 passed, 0 failed
 ================================================================
 ```
 
@@ -452,7 +469,7 @@ python scripts/verify_amounts.py
 
 **② 整数判 0** —— 券适用性判定在未换算的整数域完成
 
-**③ 离线自测** —— 46 项断言覆盖金额换算与边界情况，CI 每次 push 执行
+**③ 离线自测** —— 48 项断言覆盖金额换算与边界情况，CI 每次 push 执行
 
 ---
 
