@@ -241,6 +241,12 @@ python scripts/price_scout.py --city 佛山 --keyword 禅城区 --json result.js
 
 # 离线演示（不联网、不需要 Token）
 python scripts/sample_runner.py
+
+# 运行过程追踪（打印每一步的 MCP 调用与返回）
+python scripts/trace_run.py 佛山 禅城区
+
+# 接口用量统计
+python scripts/price_scout.py --city 佛山 --keyword 禅城区 --verbose-stats
 ```
 
 ### 在 Agent 里使用
