@@ -39,6 +39,8 @@ class McdClient:
         self.verbose = verbose
         self._call_times: list[float] = []
         self._seq = 0
+        self.call_count = 0          # 累计工具调用次数（用于观测接口用量）
+        self.tool_counts: dict[str, int] = {}  # 各工具调用次数
 
         if not self.token:
             raise McdError(
@@ -116,6 +118,8 @@ class McdClient:
 
         失败时抛 McdError，调用方需自行决定是否降级。
         """
+        self.call_count += 1
+        self.tool_counts[tool] = self.tool_counts.get(tool, 0) + 1
         result = self._rpc("tools/call", {"name": tool, "arguments": arguments})
         if result.get("isError"):
             text = "".join(
@@ -215,12 +219,26 @@ def get_my_account(client: McdClient) -> dict[str, Any]:
 
 def get_meal_detail(client: McdClient, store_code: str, code: str, order_type: int = 1,
                      be_type: int = 1, be_code: str | None = None) -> dict[str, Any]:
-    """餐品详情。关键用途：展开券指向的「虚拟编码」为真实商品编码。"""
+    """餐品详情。关键用途：展开券指向的「虚拟编码」为真实商品编码。
+
+    结果按 (storeCode, code) 缓存——同一套餐详情可能被多张券、多个环节重复查询，
+    缓存可显著减少接口调用。菜单在不同门店间高度相似，缓存命中率很高。
+    """
+    key = (store_code, code, order_type, be_type, be_code or "")
+    cache = getattr(client, "_detail_cache", None)
+    if cache is None:
+        cache = {}
+        client._detail_cache = cache  # type: ignore[attr-defined]
+    if key in cache:
+        return cache[key]
+
     args: dict[str, Any] = {"storeCode": store_code, "orderType": order_type, "beType": be_type, "code": code}
     if be_code:
         args["beCode"] = be_code
     data = client.call_safe("query-meal-detail", **args)
-    return data if isinstance(data, dict) else {}
+    result = data if isinstance(data, dict) else {}
+    cache[key] = result
+    return result
 
 
 def calculate_price(client: McdClient, store_code: str, items: list[dict[str, Any]],

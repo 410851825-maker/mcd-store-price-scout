@@ -342,10 +342,39 @@ class PriceScout:
         probe = snaps[0]
         targets = set(scope.real_codes)
 
+        # 第一步：定位目标商品本身（券指定的虚拟项展开后有几个真实编码）
+        target_price = 0.0
+        for rc in scope.real_codes:
+            p = probe.price_of(rc)
+            if p is not None:
+                target_price = max(target_price, p)
+
+        # 第二步：只保留「可能是含饮品的套餐」候选
+        # 实测：29 个套餐全部价格都 ≥ 目标商品价，按价格筛不出效果。
+        # 真正的过滤发生在第三步——rounds 里"选择套餐内饮料"组的 choices 才含目标编码。
+        candidates: list[tuple[str, str]] = []
         for code, item in probe.menu.items():
             name = item.get("name", "")
             if not any(k in name for k in ("套餐", "三件套", "四宫格", "单人餐", "全家桶")):
                 continue
+            try:
+                price = float(item.get("currentPrice"))
+            except (TypeError, ValueError):
+                continue
+            if target_price > 0 and price < target_price:
+                continue
+            candidates.append((code, name))
+
+        # 第三步：对候选套餐查详情，确认是否真的含目标商品
+        # 实测：29 个套餐中 19 个真的把该饮品列为可选，无法预先筛掉，
+        # 因此 query-meal-detail 的调用量是必要的。
+        # 但 calculate-price（验算券是否生效）可以限量——
+        # 最多验算 MAX_TRAP_CHECKS 个，足够给用户提示且大幅降低接口用量。
+        MAX_TRAP_CHECKS = 6
+        checked = 0
+        for code, name in candidates:
+            if checked >= MAX_TRAP_CHECKS:
+                break
             detail = get_meal_detail(self.c, probe.store_code, code)
             contains = False
             for r in detail.get("rounds", []) or []:
@@ -358,6 +387,7 @@ class PriceScout:
             if not contains:
                 continue
             # 含该商品，再用实测算价确认券不生效
+            checked += 1
             price_data = calculate_price(
                 self.c, probe.store_code,
                 items=[{"productCode": code, "quantity": 1}],
@@ -423,8 +453,9 @@ class PriceScout:
 
         history = self.build_history()
 
-        # 跨片区对照
-        cross = self.compare_across_areas(compare_cities or [], product_keyword)
+        # 跨片区对照：复用主查询已拉取的门店，避免重复调用接口
+        reuse = {s.store_code: s for s in snaps}
+        cross = self.compare_across_areas(compare_cities or [], product_keyword, reuse=reuse)
 
         return {
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -438,29 +469,72 @@ class PriceScout:
 
     def compare_across_areas(self, areas: list[tuple[str, str]],
                              product_keyword: str | None = None,
-                             max_per_area: int = 3) -> dict[str, Any]:
+                             max_per_area: int = 3,
+                             reuse: dict[str, StoreSnapshot] | None = None) -> dict[str, Any]:
         """跨片区/跨城对比：不同定价体系的门店放在同一坐标系里比。
 
         实测发现：同片区门店价差约 ¥1，跨片区（社区店 vs 交通枢纽）可达 ¥18。
         这个维度是本工具真正的价值所在，因此单独提供。
+
+        reuse: 主查询已拉取的门店快照（store_code -> snapshot）。
+            复用可避免同一片区被重复拉取，减少接口调用并保证两处数据一致。
         """
         if not areas:
             return {}
 
+        reuse = reuse or {}
         area_snaps: dict[str, list[StoreSnapshot]] = {}
         for city, keyword in areas:
+            got: list[StoreSnapshot] = []
+            # 先只取门店列表（不拉菜单），已拉过的门店直接复用快照
             try:
-                got = self.build_snapshots(city, keyword, limit=max_per_area)
+                raw_stores = get_nearby_stores(self.c, city, keyword, be_type=1)
             except McdError:
-                continue
+                raw_stores = []
+            for st in raw_stores[:max_per_area]:
+                code = str(st.get("storeCode", ""))
+                if not code:
+                    continue
+                if code in reuse:
+                    got.append(reuse[code])
+                    continue
+                snap = StoreSnapshot(
+                    store_code=code,
+                    store_name=st.get("storeName", code),
+                    distance_m=st.get("distance"),
+                    address=st.get("address", ""),
+                    business_hours=(
+                        f"{st.get('businessStartTime', '?')}-{st.get('businessEndTime', '?')}"
+                        if st.get("businessStartTime") else ""
+                    ),
+                )
+                snap.menu = get_menu_safe(self.c, code)
+                snap.total_count = len(snap.menu)
+                for item in snap.menu.values():
+                    try:
+                        cur = float(item.get("currentPrice"))
+                        orig = float(item.get("originalPrice"))
+                    except (TypeError, ValueError):
+                        continue
+                    if orig != cur:
+                        snap.discounted_count += 1
+                        snap.discount_total += round(orig - cur, 2)
+                reuse[code] = snap
+                got.append(snap)
             if got:
                 area_snaps[f"{city}·{keyword}"] = got
 
         if not area_snaps:
             return {}
 
-        # 汇总每个商品在各片区的价格
-        all_stores = [s for group in area_snaps.values() for s in group]
+        # 汇总每个商品在各片区的价格（同一 storeCode 只计一次）
+        seen: set[str] = set()
+        all_stores: list[StoreSnapshot] = []
+        for group in area_snaps.values():
+            for s in group:
+                if s.store_code not in seen:
+                    seen.add(s.store_code)
+                    all_stores.append(s)
         verdicts = self.compare_products(all_stores, name_filter=product_keyword, top=10)
 
         # 各片区自身的折扣覆盖率
@@ -610,7 +684,7 @@ def render_card(result: dict[str, Any]) -> str:
     cross = result.get("cross_area")
     if cross and cross.get("areas"):
         A("")
-        A("【六】跨片区定价体系对比")
+        A("【五】跨片区定价体系对比")
         A("  " + "-" * 56)
         for name, stat in sorted(cross["areas"].items(),
                                  key=lambda kv: kv[1]["rate"], reverse=True):
@@ -626,7 +700,8 @@ def render_card(result: dict[str, Any]) -> str:
                     A(f"        {sname[:26]:<28} ¥{price:<6} ({d})")
 
     # ---- 行动建议
-    A("【五】行动建议")
+    A("")
+    A("【六】行动建议")
     A("  " + "-" * 56)
     for i, tip in enumerate(_build_tips(result), 1):
         A(f"  {i}. {tip}")
@@ -746,6 +821,8 @@ def main() -> int:
     ap.add_argument("--json", help="把结果另存为 JSON")
     ap.add_argument("--sample", action="store_true",
                     help="使用离线样例数据，不访问网络（用于演示与自测）")
+    ap.add_argument("--verbose-stats", action="store_true",
+                    help="运行结束后打印各 MCP 工具的调用次数")
     ap.add_argument("--compare", action="append", default=[],
                     help="跨片区对照，格式 城市/关键词，可重复。如 --compare 广州/广州塔 --compare 佛山/禅城区")
     args = ap.parse_args()
@@ -774,6 +851,12 @@ def main() -> int:
     except McdError as exc:
         print(f"\n[错误] {exc}", file=sys.stderr)
         return 1
+
+    # 接口用量统计（便于评估运行成本与限流余量）
+    if args.verbose_stats:
+        print(f"\n接口调用统计：共 {client.call_count} 次")
+        for tool, n in sorted(client.tool_counts.items(), key=lambda kv: -kv[1]):
+            print(f"   {tool:<26} {n} 次")
 
     card = render_card(result)
     print("\n" + card)
