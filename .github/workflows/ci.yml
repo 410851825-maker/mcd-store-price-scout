@@ -54,6 +54,11 @@ jobs:
           print("金额单位与精度校验通过")
           PY
 
+      - name: Verify contest requirements
+        run: |
+          # 逐条对照官方活动规则做机器核验
+          python scripts/verify_requirements.py
+
       - name: Verify no hardcoded token
         run: |
           # 真实 token 指纹由 CI 直接 grep，仓库与测试文件中均不写入

@@ -15,6 +15,41 @@
 
 ---
 
+## 参赛信息
+
+| 项 | 内容 |
+|---|---|
+| 赛事名称 | 麦当劳程序员创意开发大赛 |
+| 主办方 | 金拱门（中国）有限公司 |
+| 官方活动仓库 | [`M-China/mcd-developer-innovation-challenge`](https://github.com/M-China/mcd-developer-innovation-challenge) |
+| 活动规则 | [`activityGuidelines.md`](https://github.com/M-China/mcd-developer-innovation-challenge/blob/main/activityGuidelines.md) |
+| 参赛项目名称 | 麦门店店价差官 mcd-store-price-scout |
+| 使用能力 | 麦当劳中国 MCP Server（`https://mcp.mcd.cn`），9 个只读工具 |
+| 开发方式 | 腾讯 WorkBuddy 智能体（已提交 `workbuddy.md` 记录完整开发对话） |
+| 数据范围 | 仅使用当前登录用户自己的账号数据，全程只读 |
+
+### 参赛材料清单
+
+| 文件 | 官方要求 | 本项目 |
+|---|---|---|
+| `README.md` | 项目介绍、安装方法、使用示例、目标用户 | ✅ 四要素齐备 |
+| `CONTEST_DECLARATION.md` | 参赛声明，文件名及内容均不可改动 | ✅ 官方原文，MD5 `91a7b32ec28098b609ca3f215cdf7147` |
+| `MCP_INTEGRATION.md` | MCP Server、Tool、调用流程、业务价值 | ✅ 四要素齐备 |
+| `mcp-config.example.json` | 脱敏配置，只允许环境变量占位符 | ✅ 仅含 `${MCD_MCP_TOKEN}` |
+| 源代码 | 项目主体代码或可运行内容 | ✅ 8 个脚本，零第三方依赖 |
+| `workbuddy.md` | WorkBuddy 对话上下文（专项奖励必交） | ✅ 六轮开发对话实录 |
+
+### 规则符合性自检
+
+```bash
+python scripts/verify_requirements.py
+```
+
+逐条对照官方规则做机器核验（必交文件、命名、README 四要素、声明文件哈希、
+配置脱敏、全仓库 Token 扫描、样例数据个人信息、内容合规、只读约束、时间窗口）。
+
+---
+
 ## 项目介绍
 
 **你站在麦当劳门口，想买巨无霸。这家店多少钱？换个店呢？手里那张券在这儿能省到钱吗？**
@@ -316,7 +351,7 @@ python scripts/price_scout.py --city 佛山 --keyword 禅城区 --verbose-stats
 mcd-store-price-scout/
 ├── SKILL.md                        # Agent Skill 定义
 ├── README.md                       # 本文件
-├── MCP_INTEGRATION.md              # MCP 集成说明
+├── MCP_INTEGRATION.md              # MCP 集成说明（Server/Tool/调用流程/业务价值）
 ├── CONTEST_DECLARATION.md          # 参赛声明（官方原文，未改动）
 ├── mcp-config.example.json         # 脱敏 MCP 配置
 ├── workbuddy.md                    # WorkBuddy 开发对话上下文
@@ -325,18 +360,23 @@ mcd-store-price-scout/
 │   ├── mcp-tools.md                # 工具清单 + 字段映射 + 已知坑
 │   └── store-pricing.md            # 门店定价机制与判读方法
 ├── scripts/
-│   ├── mcd_client.py               # 零依赖 MCP 客户端
+│   ├── mcd_client.py               # 零依赖 MCP 客户端（鉴权/限流/降级/缓存）
 │   ├── price_scout.py              # 四维决策核心引擎
 │   ├── sample_runner.py            # 离线演示
-│   ├── selftest.py                 # 46 项自测
+│   ├── selftest.py                 # 46 项离线自测
+│   ├── verify_amounts.py           # 金额精度交叉校验（13 项，需 Token）
+│   ├── verify_requirements.py      # 参赛要求逐条核验（37 项）
+│   ├── trace_run.py                # 运行过程追踪（打印每步 MCP 调用）
 │   └── sample_data/
 │       └── sample_data.json        # 脱敏样例数据
 ├── docs/
-│   └── example-output.txt          # 真实运行输出样例（已脱敏）
-└── .github/workflows/ci.yml        # CI：跑自测
+│   ├── example-output.txt          # 决策卡输出样例（已脱敏）
+│   └── trace-output.txt            # 运行追踪完整日志（258 行，已脱敏）
+└── .github/workflows/ci.yml        # CI：自测 + 精度守卫 + Token 扫描
 ```
 
-> 完整输出样例见 [`docs/example-output.txt`](docs/example-output.txt)（真实运行，已脱敏）。
+> 完整输出样例见 [`docs/example-output.txt`](docs/example-output.txt)，
+> 运行追踪日志见 [`docs/trace-output.txt`](docs/trace-output.txt)（均为真实运行，已脱敏）。
 
 ---
 

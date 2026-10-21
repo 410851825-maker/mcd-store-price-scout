@@ -8,8 +8,32 @@
 
 ---
 
-## 一、总体调用链路
+## 目录
 
+| 官方要求的四要素 | 对应章节 |
+|---|---|
+| **MCP Server** | [一、MCP Server 与接入信息](#一mcp-server-与接入信息) |
+| **Tool** | [二、Tool 清单 · 实际使用的工具（9 个）](#二tool-清单--实际使用的工具9-个) ／ [三、Tool 清单 · 已验证未使用的工具](#三tool-清单--已验证未使用的工具) |
+| **调用流程** | [四、调用流程](#四调用流程) ／ [五、真实调用追踪](#五真实调用追踪) |
+| **业务价值** | [六、业务价值](#六业务价值) |
+
+---
+
+## 一、MCP Server 与接入信息
+
+| 项 | 值 |
+|---|---|
+| Server 地址 | `https://mcp.mcd.cn` |
+| 传输协议 | Streamable HTTP |
+| 鉴权方式 | 请求头 `Authorization: Bearer <MCP Token>` |
+| Token 获取 | <https://open.mcd.cn/mcp> → 登录 → 控制台 → 激活 |
+| 服务端版本 | 1.0.9（2026-09-10），共 35 个工具 |
+| 限流 | 每 Token 每分钟 600 次请求，超限返回 429 |
+| 开放范围 | 中国大陆地区（不含港澳台） |
+| 本项目使用 | **9 个只读工具**，不含任何写操作 |
+| 配置示例 | [`mcp-config.example.json`](mcp-config.example.json)（仅含 `${MCD_MCP_TOKEN}` 占位符） |
+
+---
 ```
                        ┌─────────────────────────┐
    用户提问 ──────────▶│  price_scout.advise()   │
@@ -35,7 +59,7 @@ nearby-stores   query-meals     store-coupons    order-list     nearby-stores
 
 ---
 
-## 二、实际使用的工具（9 个）
+## 二、Tool 清单 · 实际使用的工具（9 个）
 
 ### 2.1 `query-nearby-stores` — 找门店
 
@@ -319,7 +343,7 @@ calculate_price(store, items=[{productCode: "9900005466", quantity: 1}], coupon_
 
 ---
 
-## 三、未使用但已验证的工具
+## 三、Tool 清单 · 已验证未使用的工具
 
 | 工具 | 验证结果 | 未使用原因 |
 |---|---|---|
@@ -336,26 +360,118 @@ calculate_price(store, items=[{productCode: "9900005466", quantity: 1}], coupon_
 
 ---
 
-## 四、业务价值
+## 四、调用流程
 
-### 4.1 定价体系差异可视化
+### 4.1 完整链路
+
+```
+CLI 入口
+  ↓
+MCP 客户端（鉴权 / 限流 / 失败降级）
+  ↓
+取数层 ── 9 个只读工具的真实返回
+  ↓
+单位换算 ── 唯一的换算点（calculate-price 返回分，其余返回元）
+  ↓
+计算层 ── 四个维度
+  ↓
+输出层 ── 六段式决策卡
+```
+
+**核心原则：取数交给 MCP，算术交给代码，表达交给 Agent。**
+程序不生成任何数字——每个金额都来自接口返回，算术只有加、减、除、比较。
+
+### 4.2 调用顺序与依赖
+
+| 步 | 工具 | 次数 | 依赖 |
+|---|---|---|---|
+| 1 | `query-nearby-stores` | 1 + 每对照片区 1 | — |
+| 2 | `query-meals` | 每店 1 | 依赖步 1 的 `storeCode` |
+| 3 | `query-store-coupons` | 每店 1 | 依赖步 1 的 `storeCode` |
+| 4 | `query-my-coupons` | 1 | — |
+| 5 | `query-meal-detail` | 每券 1 + 套餐候选 | 依赖步 3 的 `products[].productCode` |
+| 6 | `calculate-price` | 每券 1 + 套餐验算 | 依赖步 5 展开后的真实编码 |
+| 7 | `order-list` | 1 | — |
+| 8 | `now-time-info` | 1 | — |
+
+**实测一次完整运行**：34 次调用，13.4 秒，限流上限 600/分余量充足。
+调用构成：`query-meals` 10 / `query-meal-detail` 7 / `calculate-price` 7 /
+`query-nearby-stores` 4 / `query-store-coupons` 4 / `query-my-coupons` 1 / `order-list` 1。
+
+### 4.3 关键依赖链：券的适用范围判定
+
+这是整个项目技术含量最高的一段，**三步缺一不可**：
+
+```
+query-store-coupons  →  券声明的 productCode（可能是虚拟项，菜单里查不到）
+        ↓
+query-meal-detail    →  rounds[].choices[].code  展开为真实编码
+        ↓
+calculate-price      →  discount 判定券是否生效（整数比较，不看不可靠字段）
+```
+
+实测证据：
+
+```
+query-meal-detail  code=9900016270   → rounds=1 choices=2
+   虚拟编码 9900016270 → 真实编码 515946（冰）/ 515945（热）
+calculate-price    couponId=32EC...  → price=1390 discount=710
+   单点黑巧：优惠 710 分 = ¥7.10，券生效
+calculate-price    couponId=32EC...  → price=3350 discount=0
+   麦辣鸡腿汉堡三件套：优惠 0 分，券不生效 → 记为陷阱
+```
+
+---
+
+## 五、真实调用追踪
+
+`scripts/trace_run.py` 包装 `McdClient.call`，把每次调用的工具、关键参数、
+返回摘要全部打印出来，同时把业务逻辑拆成 7 步展示。
+
+```bash
+export MCD_MCP_TOKEN="你的Token"
+python scripts/trace_run.py 佛山 禅城区
+```
+
+完整输出见 [`docs/trace-output.txt`](docs/trace-output.txt)（258 行真实记录，已脱敏）。
+
+**七步结构**：
+
+| 步 | 内容 | 输出 |
+|---|---|---|
+| 1 | 初始化客户端 | 接入地址、Token 来源、限流阈值 |
+| 2 | 定位门店 + 拉菜单 | 4 家门店 / 394 个商品条目 |
+| 3 | 拉各店可用券 | 1/0/0/0 项（空数组是有效数据） |
+| 4 | 比价 + 折扣覆盖率 | 零接口调用，纯本地计算 |
+| 5 | 判定券适用范围 | 虚拟编码展开 → 实测算价 |
+| 6 | 历史消费画像 | 5 单 / ¥233.00 / 客单价 ¥46.60 |
+| 7 | 跨片区对比 | 佛山 47.3% / 广州塔 35.0% / 南站 0.0% |
+
+**这份追踪日志同时是回归工具**：改动后跑一遍就能看出接口调用数有没有异常增长、
+每个金额的真实来源是否正确。
+
+---
+
+## 六、业务价值
+
+### 6.1 定价体系差异可视化
 
 社区店折扣覆盖率稳定在 46–51%，地标/枢纽店 0–1%。
 这个断层让「同款在不同店差多少」从不可知变成一张表。
 
-### 4.2 券的可用性从「试错」变成「查询」
+### 6.2 券的可用性从「试错」变成「查询」
 
 一张券在多少家店能用、哪几家能用、券认不认套餐——
 原本只能一家家点进去试，现在一次查询得到。
 
-### 4.3 避免沉没式浪费
+### 6.3 避免沉没式浪费
 
 券到期前 3 天提醒 + 指定可用门店 + 明确「套餐里用不了」，
 让券的优惠真正落到实付上。
 
 ---
 
-## 五、错误处理
+## 七、错误处理
 
 | 服务端返回 | 含义 | 本项目的处理 |
 |---|---|---|
@@ -371,7 +487,7 @@ calculate_price(store, items=[{productCode: "9900005466", quantity: 1}], coupon_
 
 ---
 
-## 六、复现方式
+## 八、复现方式
 
 ```bash
 export MCD_MCP_TOKEN="你的Token"
