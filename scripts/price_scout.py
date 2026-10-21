@@ -142,6 +142,7 @@ class CouponScope:
     virtual_codes: list[str] = field(default_factory=list)
     real_codes: list[str] = field(default_factory=list)
     real_names: list[str] = field(default_factory=list)
+    real_defaults: list[int] = field(default_factory=list)  # 1=该规格是门店默认
     usable_stores: list[str] = field(default_factory=list)
     unusable_stores: list[str] = field(default_factory=list)
     # 包含该商品但券不生效的套餐（真实陷阱）
@@ -282,20 +283,32 @@ class PriceScout:
         scope.virtual_codes = virtual_codes
 
         # 第二步：展开虚拟编码 → 真实商品编码
-        probe_store = snaps[0].store_code if snaps else ""
+        # 收集时记录 isDefault，默认项排前面（试算优先用默认项，它是门店主推规格）
+        # 探针门店优先选「券可用」的那家，避免在无此商品的店里展开失败
+        probe_store = ""
+        for cand in snaps:
+            if any(cp.get("couponId") == cid for cp in cand.coupons):
+                probe_store = cand.store_code
+                break
+        if not probe_store and snaps:
+            probe_store = snaps[0].store_code
         for vcode in virtual_codes:
             detail = get_meal_detail(self.c, probe_store, vcode)
             for r in detail.get("rounds", []) or []:
                 for ch in r.get("choices", []) or []:
                     cc = ch.get("code")
-                    if cc and cc not in scope.real_codes:
-                        scope.real_codes.append(cc)
-                        scope.real_names.append(ch.get("name", cc))
+                    if not cc or cc in scope.real_codes:
+                        continue
+                    is_default = 1 if ch.get("isDefault") == 1 else 0
+                    scope.real_codes.append(cc)
+                    scope.real_names.append(ch.get("name", cc))
+                    scope.real_defaults.append(is_default)
             if not detail.get("rounds"):
                 # 本身就是真实编码
                 if vcode not in scope.real_codes:
                     scope.real_codes.append(vcode)
                     scope.real_names.append(title)
+                    scope.real_defaults.append(1)
 
         if not scope.real_codes:
             return None
@@ -309,9 +322,35 @@ class PriceScout:
                 scope.unusable_stores.append(snap.store_code)
 
         # 第四步：实测算价验算真实优惠金额
+        #
+        # ★ 关键：必须挑「该店菜单里真实存在」且「isDefault=1」的编码来试算。
+        # 实测教训：券展开后会得到多个规格编码（如 515946 冰 / 515945 热），
+        # 但并非每家店都同时供应全部规格——只卖冰饮的门店没有 515945，
+        # 用它算价会报 60006「商品已售罄或不可售」，
+        # 进而让优惠金额被误判为 0。
         if check_price and scope.real_codes:
-            probe = snaps[0]
-            for rc in scope.real_codes[:1]:
+            # ★ 探针门店的选择很关键：
+            #   必须是「这张券实际可用」的门店。若随便取 snaps[0]（往往只是最近的那家），
+            #   而那家恰好不供应券指定的商品，就会算不出优惠（discount 为 0），
+            #   把「券能用」误判成「券没有优惠」。
+            #   实测教训：最近的高科大厦店菜单里根本没有黑巧，券自然用不了。
+            probe = None
+            for cand in snaps:
+                if cand.store_code in scope.usable_stores:
+                    probe = cand
+                    break
+            if probe is None:
+                probe = snaps[0]
+            # 排序规则：① 门店菜单里有售 ② 门店默认规格
+            order = sorted(
+                range(len(scope.real_codes)),
+                key=lambda i: (
+                    0 if scope.real_codes[i] in probe.menu else 1,
+                    0 if (i < len(scope.real_defaults) and scope.real_defaults[i]) else 1,
+                ),
+            )
+            for idx in order[:1]:
+                rc = scope.real_codes[idx]
                 price_data = calculate_price(
                     self.c, probe.store_code,
                     items=[{"productCode": rc, "quantity": 1}],

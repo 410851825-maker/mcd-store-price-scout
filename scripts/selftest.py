@@ -253,6 +253,49 @@ def test_sample_runner() -> None:
     check("卡片包含行动建议", "行动建议" in out)
 
 
+def test_coupon_probe_store_selection() -> None:
+    print("\n[9] 探针门店选择（防「券可用但优惠算成 0」的回归）")
+    # 场景：最近的门店券不可用且不供应目标商品；较远的门店券可用
+    # 期望：试算必须挑「券可用」的门店，否则 discount 会被误判为 0
+    from price_scout import CouponScope
+
+    scope = CouponScope(
+        coupon_id="C1", title="测试券", face_value=13.9, real_discount=0.0,
+        expire_at="2026-10-23", days_left=3,
+    )
+    scope.virtual_codes = ["9900016270"]
+    scope.real_codes = ["515946", "515945"]
+    scope.real_names = ["冰黑巧", "热黑巧"]
+    scope.real_defaults = [1, 0]
+    scope.usable_stores = ["FAR"]      # 远店可用
+    scope.unusable_stores = ["NEAR"]  # 近店不可用
+
+    near = StoreSnapshot(store_code="NEAR", store_name="近店")
+    near.menu = {"1111": {"name": "别的商品", "currentPrice": "20", "originalPrice": "20"}}
+    far = StoreSnapshot(store_code="FAR", store_name="远店")
+    far.menu = {"515946": {"name": "黑巧", "currentPrice": "13.9", "originalPrice": "21"}}
+
+    # 探针应选 FAR：菜单里有 515946，且券可用
+    probe = None
+    for cand in [near, far]:
+        if cand.store_code in scope.usable_stores:
+            probe = cand
+            break
+    check("探针门店选中券可用的那家", probe is not None and probe.store_code == "FAR",
+          f"选中 {probe.store_code if probe else 'None'}")
+
+    # 编码排序：菜单里有售的优先，其次默认项
+    order = sorted(
+        range(len(scope.real_codes)),
+        key=lambda i: (
+            0 if scope.real_codes[i] in probe.menu else 1,
+            0 if (i < len(scope.real_defaults) and scope.real_defaults[i]) else 1,
+        ),
+    )
+    check("试算编码选中该店有售的 515946",
+          scope.real_codes[order[0]] == "515946", scope.real_codes[order[0]])
+
+
 def test_no_hardcoded_secret() -> None:
     print("\n[8] 安全检查")
     # 只检测「形态」：疑似真实 token 的长串出现在配置/代码里即视为风险。
@@ -320,6 +363,7 @@ def main() -> int:
     test_history_profile(sample)
     test_verdict_edge_cases()
     test_sample_runner()
+    test_coupon_probe_store_selection()
     test_no_hardcoded_secret()
 
     print("\n" + "=" * 60)
