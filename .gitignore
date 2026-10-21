@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 运行时产物
+result.json
+*.out
+*.log
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+
+# 密钥与本地配置（重要：本地 MCP 配置可能含真实 Token）
+mcp-config.json
+.env
+.env.*
+*.token

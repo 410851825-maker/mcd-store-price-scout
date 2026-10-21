@@ -1,0 +1,140 @@
+{
+  "_comment": "脱敏样例数据。数值来自麦当劳 MCP 真实接口（2026-10-21），但已替换门店名、商品名、券 ID、账户信息等一切可识别内容，仅保留数据结构与相对关系，用于离线演示与自测。",
+  "stores": [
+    {
+      "storeCode": "9000001",
+      "storeName": "示例·城东社区店",
+      "address": "示例路 1 号",
+      "distance": 220,
+      "businessStartTime": "07:00",
+      "businessEndTime": "23:00",
+      "menu": {
+        "900000001": { "name": "示例巨无霸", "currentPrice": "25.5", "originalPrice": "25.5" },
+        "900000002": { "name": "示例双层吉士汉堡", "currentPrice": "23", "originalPrice": "23" },
+        "900000003": { "name": "示例冰饮", "currentPrice": "9.9", "originalPrice": "21" },
+        "900000004": { "name": "示例套餐A", "currentPrice": "36.5", "originalPrice": "36.5" },
+        "900000005": { "name": "示例麦香鸡", "currentPrice": "17", "originalPrice": "18.5" },
+        "900000006": { "name": "示例麦香鱼", "currentPrice": "22.5", "originalPrice": "22.5" },
+        "900000007": { "name": "示例小食", "currentPrice": "6", "originalPrice": "8" },
+        "900000008": { "name": "示例饮品", "currentPrice": "9.9", "originalPrice": "21" }
+      }
+    },
+    {
+      "storeCode": "9000002",
+      "storeName": "示例·城南社区店",
+      "address": "示例路 2 号",
+      "distance": 480,
+      "businessStartTime": "07:00",
+      "businessEndTime": "23:00",
+      "menu": {
+        "900000001": { "name": "示例巨无霸", "currentPrice": "26.5", "originalPrice": "26.5" },
+        "900000002": { "name": "示例双层吉士汉堡", "currentPrice": "23", "originalPrice": "23" },
+        "900000003": { "name": "示例冰饮", "currentPrice": "9.9", "originalPrice": "21" },
+        "900000004": { "name": "示例套餐A", "currentPrice": "37.5", "originalPrice": "37.5" },
+        "900000005": { "name": "示例麦香鸡", "currentPrice": "16.5", "originalPrice": "18.5" },
+        "900000006": { "name": "示例麦香鱼", "currentPrice": "22", "originalPrice": "22" },
+        "900000007": { "name": "示例小食", "currentPrice": "6", "originalPrice": "8" },
+        "900000008": { "name": "示例饮品", "currentPrice": "9.9", "originalPrice": "21" }
+      }
+    },
+    {
+      "storeCode": "9000003",
+      "storeName": "示例·枢纽站店",
+      "address": "示例枢纽站 B1",
+      "distance": 900,
+      "businessStartTime": "06:00",
+      "businessEndTime": "22:00",
+      "menu": {
+        "900000001": { "name": "示例巨无霸", "currentPrice": "29", "originalPrice": "29" },
+        "900000002": { "name": "示例双层吉士汉堡", "currentPrice": "26.5", "originalPrice": "26.5" },
+        "900000003": { "name": "示例冰饮", "currentPrice": "27", "originalPrice": "27" },
+        "900000004": { "name": "示例套餐A", "currentPrice": "54.5", "originalPrice": "54.5" },
+        "900000005": { "name": "示例麦香鸡", "currentPrice": "19.5", "originalPrice": "19.5" },
+        "900000006": { "name": "示例麦香鱼", "currentPrice": "25", "originalPrice": "25" },
+        "900000007": { "name": "示例小食", "currentPrice": "7", "originalPrice": "7" },
+        "900000008": { "name": "示例饮品", "currentPrice": "27", "originalPrice": "27" }
+      }
+    }
+  ],
+  "coupons": [
+    {
+      "id": "SAMPLE-COUPON-0001",
+      "title": "示例·9.9 指定商品券",
+      "code": "SAMPLE_CODE_0001",
+      "discountInfo": { "discountValue": "9.9", "discountDesc": "用券价格", "discountTypeText": "¥" },
+      "tradeStartDate": "2026-10-17",
+      "tradeEndDate": "2026-10-23",
+      "enable": 1,
+      "totalAvailableCount": 1,
+      "currentDayAvailableCount": 1,
+      "orderTypes": [1, 2],
+      "beTypes": [1, 2, 3, 5],
+      "channels": ["03", "14"],
+      "isPrepaid": 0,
+      "multipleProducts": false
+    }
+  ],
+  "store_coupons": {
+    "9000001": [
+      {
+        "title": "示例·9.9 指定商品券",
+        "couponId": "SAMPLE-COUPON-0001",
+        "couponCode": "SAMPLE_CODE_0001",
+        "tradeDateTime": "2026-10-17 00:00:00-2026-10-23 23:59:59",
+        "products": [
+          { "productCode": "900000000", "productName": "示例冰饮中杯（冰/热）" }
+        ],
+        "promotionId": "SAMPLE_PROMO_1"
+      }
+    ],
+    "9000002": [
+      {
+        "title": "示例·9.9 指定商品券",
+        "couponId": "SAMPLE-COUPON-0001",
+        "couponCode": "SAMPLE_CODE_0001",
+        "tradeDateTime": "2026-10-17 00:00:00-2026-10-23 23:59:59",
+        "products": [
+          { "productCode": "900000000", "productName": "示例冰饮中杯（冰/热）" }
+        ],
+        "promotionId": "SAMPLE_PROMO_1"
+      }
+    ],
+    "9000003": []
+  },
+  "order_history": [
+    {
+      "orderId": "SAMPLE-ORDER-0001",
+      "storeCode": "9000001",
+      "storeName": "示例·城东社区店",
+      "createTime": "2026-10-18 12:07:49",
+      "orderStatus": "订单已完成",
+      "realTotalAmount": "46.5",
+      "orderProductList": [
+        { "productCode": "900000001", "productName": "示例巨无霸", "quantity": 1, "comboItemList": [] },
+        { "productCode": "900000007", "productName": "示例小食", "quantity": 2, "comboItemList": [] }
+      ]
+    },
+    {
+      "orderId": "SAMPLE-ORDER-0002",
+      "storeCode": "9000001",
+      "storeName": "示例·城东社区店",
+      "createTime": "2026-10-05 07:28:53",
+      "orderStatus": "订单已完成",
+      "realTotalAmount": "19",
+      "orderProductList": [
+        { "productCode": "900000005", "productName": "示例麦香鸡", "quantity": 2, "comboItemList": [] }
+      ]
+    },
+    {
+      "orderId": "SAMPLE-ORDER-0003",
+      "storeCode": "9000003",
+      "storeName": "示例·枢纽站店",
+      "createTime": "2026-09-28 12:09:35",
+      "orderStatus": "订单已完成",
+      "realTotalAmount": "29",
+      "orderProductList": [
+        { "productCode": "900000001", "productName": "示例巨无霸", "quantity": 1, "comboItemList": [] }
+      ]
+    }
+  ]
+}

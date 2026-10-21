@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run selftest
+        run: python scripts/selftest.py
+
+      - name: Verify offline demo runs
+        run: python scripts/sample_runner.py
+
+      - name: Verify no hardcoded token
+        run: |
+          # 真实 token 指纹由 CI 直接 grep，仓库与测试文件中均不写入
+          if grep -rInE "UQcdIytlzwchUscck6of6En84LPy2ux1|XJJD20261000017" \
+                  --include="*.py" --include="*.json" --include="*.md" .; then
+            echo "::error::发现明文 MCP Token"
+            exit 1
+          fi
+          if grep -rInE "Bearer [A-Za-z0-9]{20,}" --include="*.py" --include="*.json" --include="*.md" .; then
+            echo "::error::发现 Bearer 头携带疑似真实 Token"
+            exit 1
+          fi
+          echo "未发现明文 Token"
+
+      - name: Verify MCP config uses env placeholder
+        run: |
+          if ! grep -q 'MCD_MCP_TOKEN' mcp-config.example.json; then
+            echo "::error::mcp-config.example.json 必须使用环境变量占位符"
+            exit 1
+          fi
+          echo "MCP 配置使用环境变量占位符"
