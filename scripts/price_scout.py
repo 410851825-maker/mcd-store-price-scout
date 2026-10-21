@@ -530,40 +530,9 @@ def render_card(result: dict[str, Any]) -> str:
 
     stores = result["stores"]
 
-    # ---- 折扣覆盖率：结构性差异
+    # ---- 券的可用性（放第一位：零距离成本，最能直接用）
     A("")
-    A("【一】门店活动折扣覆盖率")
-    A("  " + "-" * 56)
-    ranked = sorted(stores, key=lambda s: s.discount_rate, reverse=True)
-    for s in ranked:
-        bar = "#" * int(s.discount_rate * 20)
-        A(f"  {s.store_name[:16]:<18} {s.discounted_count:>3}/{s.total_count:<4} "
-          f"{s.discount_rate*100:>5.1f}%  {bar}")
-    if ranked:
-        best = ranked[0]
-        worst = ranked[-1]
-        A(f"  → 最高 {best.discount_rate*100:.0f}%（{best.store_name}）"
-          f" vs 最低 {worst.discount_rate*100:.0f}%（{worst.store_name}）")
-    A("")
-
-    # ---- 目标产品比价
-    A("【二】目标产品跨门店比价")
-    A("  " + "-" * 56)
-    verdicts = result["verdicts"]
-    if not verdicts:
-        A("  （未找到可比对的商品）")
-    for v in verdicts[:6]:
-        A(f"  ▸ {v.product_name}  极差 ¥{v.spread}（{v.spread_pct}%）")
-        for code, name, price, dist in v.prices:
-            d = f"{dist}m" if dist is not None else "-"
-            A(f"      {name[:20]:<22} ¥{price:<6} ({d})")
-        if v.cheapest and v.priciest and v.spread > 0:
-            A(f"      最低 {v.cheapest[1]} ¥{v.cheapest[2]}　"
-              f"最高 {v.priciest[1]} ¥{v.priciest[2]}")
-    A("")
-
-    # ---- 券资产
-    A("【三】你的券 · 适用范围与门店")
+    A("【一】你的券 · 能不能用、在哪能用")
     A("  " + "-" * 56)
     scopes = result["coupon_scopes"]
     if not scopes:
@@ -588,6 +557,37 @@ def render_card(result: dict[str, Any]) -> str:
             A(f"      ⚠ 陷阱：这些套餐含该商品但券不生效 → "
               + "、".join(sc.trap_set_names[:3]))
         A("")
+
+    # ---- 折扣覆盖率：结构性差异
+    A("【二】门店活动折扣覆盖率")
+    A("  " + "-" * 56)
+    ranked = sorted(stores, key=lambda s: s.discount_rate, reverse=True)
+    for s in ranked:
+        bar = "#" * int(s.discount_rate * 20)
+        A(f"  {s.store_name[:16]:<18} {s.discounted_count:>3}/{s.total_count:<4} "
+          f"{s.discount_rate*100:>5.1f}%  {bar}")
+    if ranked:
+        best = ranked[0]
+        worst = ranked[-1]
+        A(f"  → 最高 {best.discount_rate*100:.0f}%（{best.store_name}）"
+          f" vs 最低 {worst.discount_rate*100:.0f}%（{worst.store_name}）")
+    A("")
+
+    # ---- 目标产品比价
+    A("【三】目标产品跨门店比价")
+    A("  " + "-" * 56)
+    verdicts = result["verdicts"]
+    if not verdicts:
+        A("  （未找到可比对的商品）")
+    for v in verdicts[:6]:
+        A(f"  ▸ {v.product_name}  极差 ¥{v.spread}（{v.spread_pct}%）")
+        for code, name, price, dist in v.prices:
+            d = f"{dist}m" if dist is not None else "-"
+            A(f"      {name[:20]:<22} ¥{price:<6} ({d})")
+        if v.cheapest and v.priciest and v.spread > 0:
+            A(f"      最低 {v.cheapest[1]} ¥{v.cheapest[2]}　"
+              f"最高 {v.priciest[1]} ¥{v.priciest[2]}")
+    A("")
 
     # ---- 历史画像
     A("【四】你的历史消费画像")
@@ -638,44 +638,54 @@ def render_card(result: dict[str, Any]) -> str:
 
 
 def _build_tips(result: dict[str, Any]) -> list[str]:
-    """根据四维数据生成可执行建议。"""
+    """根据四维数据生成可执行建议。
+
+    排序原则：零距离成本的建议优先（券的使用），有距离成本的次之（换店）。
+    """
     tips: list[str] = []
+    coupon_tips: list[str] = []
+    store_tips: list[str] = []
+    price_tips: list[str] = []
     stores = result["stores"]
     verdicts = result["verdicts"]
     scopes = result["coupon_scopes"]
     hist = result["history"]
 
-    # 折扣覆盖率异常
-    if len(stores) >= 2:
-        ranked = sorted(stores, key=lambda s: s.discount_rate, reverse=True)
-        best, worst = ranked[0], ranked[-1]
-        if best.discount_rate - worst.discount_rate > 0.25:
-            tips.append(
-                f"{worst.store_name} 仅 {worst.discount_rate*100:.0f}% 商品有折扣，"
-                f"而 {best.store_name} 有 {best.discount_rate*100:.0f}%——"
-                f"同款在这里买明显更贵。")
-
-    # 目标产品价差
-    for v in verdicts[:2]:
-        if v.spread >= 2 and v.cheapest and v.priciest:
-            tips.append(
-                f"{v.product_name}：{v.cheapest[1]} ¥{v.cheapest[2]} vs "
-                f"{v.priciest[1]} ¥{v.priciest[2]}，差 ¥{v.spread}"
-                f"（{v.spread_pct}%）。若在 {v.priciest[1]} 消费，"
-                f"换到 {v.cheapest[1]} 可省 ¥{v.spread}。")
-
-    # 券的门店限定
+    # ---- 第一优先：券（零距离成本，立刻能用）
     for sc in scopes:
         if sc.unusable_stores:
             unusable_names = [s.store_name for s in stores if s.store_code in sc.unusable_stores]
-            tips.append(
+            coupon_tips.append(
                 f"你的「{sc.title}」在 {len(sc.unusable_stores)}/{len(stores)} 家门店不可用"
                 f"（含 {'、'.join(unusable_names[:2])}），"
                 f"可用门店：{'、'.join([s.store_name for s in stores if s.store_code in sc.usable_stores][:2])}。")
         if sc.trap_set_names:
-            tips.append(
+            coupon_tips.append(
                 f"注意：{sc.title} 只认「单独点」，套餐 "
                 f"{'、'.join(sc.trap_set_names[:2])} 虽然含该商品，但用券不生效（discount=0）。")
+        if sc.days_left >= 0 and sc.days_left <= 7 and sc.real_discount > 0:
+            coupon_tips.append(
+                f"「{sc.title}」还剩 {sc.days_left} 天失效，"
+                f"用掉可省 ¥{sc.real_discount}，过期就白扔了。")
+
+    # ---- 第二优先：门店定价异常（有认知价值，无距离成本）
+    if len(stores) >= 2:
+        ranked = sorted(stores, key=lambda s: s.discount_rate, reverse=True)
+        best, worst = ranked[0], ranked[-1]
+        if best.discount_rate - worst.discount_rate > 0.25:
+            store_tips.append(
+                f"{worst.store_name} 仅 {worst.discount_rate*100:.0f}% 商品有折扣，"
+                f"而 {best.store_name} 有 {best.discount_rate*100:.0f}%——"
+                f"同款在这里买明显更贵。")
+
+    # ---- 第三优先：目标产品价差（需用户权衡距离）
+    for v in verdicts[:2]:
+        if v.spread >= 2 and v.cheapest and v.priciest:
+            price_tips.append(
+                f"{v.product_name}：{v.cheapest[1]} ¥{v.cheapest[2]} vs "
+                f"{v.priciest[1]} ¥{v.priciest[2]}，差 ¥{v.spread}"
+                f"（{v.spread_pct}%）。若在 {v.priciest[1]} 消费，"
+                f"换到 {v.cheapest[1]} 可省 ¥{v.spread}。")
 
     # 历史对比
     if hist.stores and verdicts:
@@ -687,7 +697,7 @@ def _build_tips(result: dict[str, Any]) -> list[str]:
                     if others:
                         cheapest = min(others, key=lambda x: x[2])
                         if cheapest[2] < price:
-                            tips.append(
+                            price_tips.append(
                                 f"你常去 {top_store}（{v.product_name} ¥{price}），"
                                 f"但 {cheapest[1]} 只要 ¥{cheapest[2]}，"
                                 f"每次多付 ¥{round(price - cheapest[2], 2)}。")
@@ -701,17 +711,19 @@ def _build_tips(result: dict[str, Any]) -> list[str]:
             hi_name, hi = ranked_areas[0]
             lo_name, lo = ranked_areas[-1]
             if hi["rate"] - lo["rate"] > 0.15:
-                tips.append(
+                store_tips.append(
                     f"定价体系差异：{hi_name} 折扣覆盖 {hi['rate']*100:.0f}%，"
                     f"{lo_name} 仅 {lo['rate']*100:.0f}%——"
                     f"后者是交通枢纽/景区型定价，同款普遍更贵。")
         for v in cross["verdicts"][:1]:
             if v.spread >= 5 and v.cheapest and v.priciest:
-                tips.append(
+                price_tips.append(
                     f"跨片区最大价差：{v.product_name} 在 {v.priciest[1]} 要 ¥{v.priciest[2]}，"
                     f"在 {v.cheapest[1]} 只要 ¥{v.cheapest[2]}，差 ¥{v.spread}"
                     f"（{v.spread_pct}%）。")
 
+    # 合并输出：券 → 门店认知 → 价差（零距离成本优先）
+    tips = coupon_tips + store_tips + price_tips
     if not tips:
         tips.append("当前各店价格与折扣基本一致，直接按你的习惯点即可。")
     return tips
